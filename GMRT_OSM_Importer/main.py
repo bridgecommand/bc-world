@@ -140,6 +140,8 @@ if use_osm:
                 for shape_index in range(number_of_shapes):
                     if Point(point_to_check).within(shape(filtered_shapes[shape_index])):
                         point_is_land = True
+                        # No need to check more polygons
+                        break
                 if point_is_land:
                     gmrt_array_working[y_index, x_index] = max(base_data_height, min_land_height)
                 else:
