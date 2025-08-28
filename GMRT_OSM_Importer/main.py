@@ -6,12 +6,16 @@ import shapefile
 import datetime
 from pathlib import Path
 from shapely.geometry import Point, shape
+import xml.etree.ElementTree as ET
+from urllib.request import urlretrieve
 
 ############################################
 # Start of variables to change for your area
 ############################################
 
-# Main GMRT file to load
+# Main GMRT (or other WGS84 digital elevation map in GeoTIFF format) file to load
+# If using elevation data that is not from GMRT, the readme.txt section at the end
+# should be updated to credit the correct source.
 gmrt_file = 'GMRTv4_3_1_20250814topo.tif'
 
 # Required output resolution. Ideally square, and (2^n + 1)
@@ -28,9 +32,12 @@ output_folder = Path('Output_PortsmouthHarbour')
 # Do we want to replace nan and inf values (required for 5.10.? and earlier)
 replace_nans = True
 
+# If we want to get navigation aid (e.g. buoy) information from OSM
+use_osm_map = True
+
 # If we want to add coastline detail with the OSM coastline data
 # Warning, this is currently very slow for reasonable size output samples
-use_osm = True
+use_osm_coastline = True
 
 # The OSM coastlines (land polygons) file to use
 # This can be downloaded from
@@ -108,7 +115,7 @@ terrain_ini_file.write("TerrainMaxHeight(1)=" + str(terrain_max_height) + "\n")
 terrain_ini_file.write("SeaMaxDepth(1)=" + str(sea_max_depth) + "\n")
 terrain_ini_file.close()
 
-if use_osm:
+if use_osm_coastline:
     # Find the bounding box of the area of interest
     world_bounding_box = (terrain_long,
                           terrain_lat,
@@ -162,6 +169,107 @@ img.imsave(terrain_map_file_name, gmrt_array_working, format='png', vmin=-10, vm
 # Create a texture file
 terrain_texture_file_name = output_folder / 'texture.png'
 img.imsave(terrain_texture_file_name, gmrt_array_working, cmap=plt.get_cmap('summer'), format='png', vmin=0, vmax=terrain_max_height)
+
+# End of main map generation
+
+# Start of processing OSM map file for buoys, lights etc
+
+# Utility function to get value from child if present
+def get_child_value(xml_item, key):
+    result = ''
+    for xml_child in xml_item:
+        if 'k' in xml_child.keys() and 'v' in xml_child.keys() and xml_child.attrib['k'] == key:
+            result = xml_child.attrib['v']
+    return result
+
+if use_osm_map:
+    print('Downloading OpenStreetMap data for area\n')
+    osm_map_file = 'map.osm'
+    osm_map_url = ('https://overpass-api.de/api/map?bbox=' +
+                   str(terrain_long) + ',' +
+                   str(terrain_lat) + ',' +
+                   str(terrain_long + terrain_long_extent) + ',' +
+                   str(terrain_lat + terrain_lat_extent))
+
+    # Download the OSM Map here (TODO: Make this optional)
+    urlretrieve(osm_map_url, osm_map_file)
+
+    # create element tree object
+    tree = ET.parse(osm_map_file)
+    # get root element
+    root = tree.getroot()
+
+    buoys = []
+
+    for item in root.findall('node'):
+        if len(item) > 0:
+            seamark_type = get_child_value(item, 'seamark:type')
+            if seamark_type != '':
+                seamark_category = get_child_value(item, 'seamark:' + seamark_type + ':category')
+                seamark_light_character = get_child_value(item, 'seamark:light:character')
+                seamark_light_colour = get_child_value(item, 'seamark:light:colour')
+                seamark_lat = item.attrib['lat']
+                seamark_lon = item.attrib['lon']
+                # Also to look at - sequence, period, height, range
+                # Also look at sector lights, which will need to be handled differently
+
+                # Add known buoy types for now
+                if seamark_type == 'beacon_lateral' and seamark_category == 'port':
+                    buoys.append(['port_post', seamark_lon, seamark_lat, True])
+                if seamark_type == 'beacon_lateral' and seamark_category == 'starboard':
+                    buoys.append(['stbd_post', seamark_lon, seamark_lat, True])
+
+                if seamark_type == 'beacon_special_purpose':
+                    buoys.append(['special_post', seamark_lon, seamark_lat, True])
+
+                if seamark_type == 'buoy_special_purpose' and seamark_category == 'mooring':
+                    buoys.append(['mooring', seamark_lon, seamark_lat, False])
+
+                if seamark_type == 'buoy_lateral' and seamark_category == 'port':
+                    buoys.append(['port', seamark_lon, seamark_lat, False])
+                if seamark_type == 'buoy_lateral' and seamark_category == 'starboard':
+                    buoys.append(['stbd', seamark_lon, seamark_lat, False])
+
+                if seamark_type == 'buoy_cardinal' and seamark_category == 'north':
+                    buoys.append(['north', seamark_lon, seamark_lat, False])
+                if seamark_type == 'buoy_cardinal' and seamark_category == 'east':
+                    buoys.append(['east', seamark_lon, seamark_lat, False])
+                if seamark_type == 'buoy_cardinal' and seamark_category == 'south':
+                    buoys.append(['south', seamark_lon, seamark_lat, False])
+                if seamark_type == 'buoy_cardinal' and seamark_category == 'west':
+                    buoys.append(['west', seamark_lon, seamark_lat, False])
+
+                # TODO: beacon_cardinal needed as well, plus all other buoy types
+
+    # Create buoy.ini file
+    buoy_ini_file_name = output_folder / 'buoy.ini'
+    buoy_ini_file = open(buoy_ini_file_name, 'w')
+
+    buoy_ini_file.write('Number=' + str(len(buoys)) + '\n\n')
+    for i, buoy in enumerate(buoys):
+        buoy_ini_file.write('Type(' + str(i+1) + ')=' + buoy[0] + '\n' )
+        buoy_ini_file.write('Long(' + str(i + 1) + ')=' + buoy[1] + '\n')
+        buoy_ini_file.write('Lat(' + str(i + 1) + ')=' + buoy[2] + '\n')
+        if buoy[3]:
+            buoy_ini_file.write('Grounded(' + str(i + 1) + ')=1\n')
+        buoy_ini_file.write('\n')
+
+    buoy_ini_file.close()
+
+# Write a readme.txt file (For GMRT and OSM data)
+readme_file_name = output_folder / 'readme.txt'
+readme_file = open(readme_file_name, 'w')
+readme_file.write('Elevation and Bathymetry data from the Global Multi-Resolution Topography Synthesis (GMRT)\n')
+readme_file.write('For details, please see Ryan, W. B. F., S.M. Carbotte, J. Coplan, S. O\'Hara, A. Melkonian, R. Arko,\n'
+                  'R.A. Weissel, V. Ferrini, A. Goodwillie, F. Nitsche, J. Bonczkowski, and R. Zemsky (2009),\n'
+                  'Global Multi-Resolution Topography (GMRT) synthesis data set, Geochem. Geophys. Geosyst., \n'
+                  '10, Q03014, doi:10.1029/2008GC002332.\n'
+                  '\n'
+                  'Coastline data and navigation aid data from from OpenStreetMap data, available\n'
+                  'under the Open Database License.\n'
+                  '\n'
+                  'NOT FOR USE IN NAVIGATION\n')
+readme_file.close()
 
 # End
 print('Script end: ' + str(datetime.datetime.now()))
