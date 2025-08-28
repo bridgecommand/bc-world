@@ -11,8 +11,17 @@ data to increase detail of the coastline.
 The OSM filtering sets a minimum height for 'land' 
 areas, and a minimum depth for 'sea' areas, based
 on the OpenStreetMap coastline data. If this is not
-required, it can be disabled by changing the `use_osm`
-variable.
+required, it can be disabled by changing the 
+`use_osm_coastline` variable.
+
+The script also uses additional data from OpenStreetMap 
+to add buoys and other aids to navigation. This is 
+currently in an early stage of development, and imports 
+lateral and cardinal buoys, lateral and special posts,
+and mooring buoys. The OpenStreetMap for the relevant
+area is downloaded automatically. If importing this
+data is not required, it can be disabled by changing
+the `use_osm_map` variable.
 
 To use the script, you will need to download the 
 GMRT data for the area of interest in GeoTIFF format.
@@ -45,10 +54,10 @@ GeoTIFF file, and the output resolution.
 **Warning**:
 At the moment, the script is very slow to run, due
 to the OSM filtering. To test the script, you may 
-want to start with `use_osm = False`. As an example
-, a model covering Portsmouth Harbour at 1025x1025 
-resolution took about 5 hours to process on a modern
-laptop.
+want to start with `use_osm_coastline = False`. 
+As an example, a model covering Portsmouth Harbour at 
+1025x1025 resolution took about 5 hours to process on a
+modern laptop.
 
 When the script has finished, the files in the output
 directory can be copied into a new folder in your
@@ -65,7 +74,9 @@ satellite photography.
 
 Additionally, from the OpenSeaMap project, there is
 a lot of data on buoys and navigation lights and 
-markers that could be used.
+markers that could be used. The initial stages of 
+this have been started, but not all buoys or beacons
+are included, and no lights are yet included.
 
 Ideally the script could also identify marina
 features from OSM data, and generate a representation
