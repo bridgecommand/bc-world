@@ -18,7 +18,8 @@ The script also uses additional data from OpenStreetMap
 to add buoys and other aids to navigation. This is 
 currently in an early stage of development, and imports 
 lateral and cardinal buoys, lateral and special posts,
-and mooring buoys. The OpenStreetMap for the relevant
+and mooring buoys. Importing navigation lights is currently 
+in the early stages of development. The OpenStreetMap for the relevant
 area is downloaded automatically. If importing this
 data is not required, it can be disabled by changing
 the `use_osm_map` variable.

@@ -183,7 +183,6 @@ def get_child_value(xml_item, key):
     return result
 
 if use_osm_map:
-    print('Downloading OpenStreetMap data for area\n')
     osm_map_file = 'map.osm'
     osm_map_url = ('https://overpass-api.de/api/map?bbox=' +
                    str(terrain_long) + ',' +
@@ -191,16 +190,167 @@ if use_osm_map:
                    str(terrain_long + terrain_long_extent) + ',' +
                    str(terrain_lat + terrain_lat_extent))
 
-    # Download the OSM Map here (TODO: Make this optional)
-    urlretrieve(osm_map_url, osm_map_file)
+    # Download the OSM Map here (TODO: Make this optional, and allow force override)
+    if not Path.is_file(Path(osm_map_file)):
+        print('Downloading OpenStreetMap data for area from ' + osm_map_url + '\n')
+        urlretrieve(osm_map_url, osm_map_file)
+    else:
+        print('Using cached ' + osm_map_file + ' for OpenStreetMap data for area\n' )
 
     # create element tree object
     tree = ET.parse(osm_map_file)
     # get root element
     root = tree.getroot()
 
-    buoys = []
+    # Iterate for lights
+    lights = []
+    for item in root.findall('node'):
+        if len(item) > 0:
+            # Bodge to find potential multiple (e.g. sector) lights
+            for multi in range(10):
+                if multi == 0:
+                    multi_str = ''
+                else:
+                    multi_str = str(multi) + ':'
 
+                light_character = get_child_value(item, 'seamark:light:' + multi_str + 'character')
+                if light_character != '':
+                    # Some type of light found
+                    light_dict = {
+                        "light_lat" : item.attrib['lat'],
+                        "light_lon" : item.attrib['lon'],
+                        "light_colour" : get_child_value(item, 'seamark:light:' + multi_str + 'colour'),
+                        "light_range" : get_child_value(item, 'seamark:light:' + multi_str + 'range'),
+                        "light_period" : get_child_value(item, 'seamark:light:' + multi_str + 'period'),
+                        "light_group" : get_child_value(item, 'seamark:light:' + multi_str + 'group'),
+                        "light_character" : light_character,
+                        "sector_start" : get_child_value(item, 'seamark:light:' + multi_str + 'sector_start'),
+                        "sector_end": get_child_value(item, 'seamark:light:' + multi_str + 'sector_end')
+                        # TODO: Height
+                    }
+                    lights.append(light_dict)
+
+    # Create light.ini file
+    light_ini_file_name = output_folder / 'light.ini'
+    light_ini_file = open(light_ini_file_name, 'w')
+
+    light_sequence = {
+        'F' : 'LLLL',
+        'Fl' : 'LLDDDDDD',
+        'Q' : 'LLDDD',
+        'VQ' : 'LDD',
+        'LFl' : 'LLLLLLLLDDDDDDDDDDDD',
+        'Iso' : 'LLLDDD',
+        'Oc' : 'LLLLLLDD'
+    }
+
+    light_ini_file.write('Number=' + str(len(lights)) + '\n\n')
+    for i, light in enumerate(lights):
+
+        if light["light_character"] in light_sequence:
+            sequence = light_sequence[light["light_character"]]
+
+            # Duplicate for group
+            if light["light_group"] != '':
+                if int(light["light_group"]) > 1:
+                    sequence = sequence * int(light["light_group"])
+
+            # Pad to length
+            if light["light_period"] != '':
+                while len(sequence) * 0.25 < float(light["light_period"]):
+                    if light["light_character"] == 'Oc':
+                        # Special case for occulting, pad with light
+                        sequence = sequence + "L"
+                    else:
+                        # Normal case
+                        sequence = sequence + "D"
+
+            if light["light_range"] != '':
+                light_range = light["light_range"]
+            else:
+                # Default value, nautical miles
+                light_range = '5'
+
+            light_ini_file.write('Desc(' + str(i + 1) + ')=' + str(light) + '\n')
+
+            light_ini_file.write('Long(' + str(i + 1) + ')=' + light["light_lon"] + '\n')
+            light_ini_file.write('Lat(' + str(i + 1) + ')=' + light["light_lat"] + '\n')
+            light_ini_file.write('Sequence(' + str(i + 1) + ')=' + sequence + '\n')
+            light_ini_file.write('Range(' + str(i + 1) + ')=' + light_range + '\n')
+
+            if light["light_colour"] == 'white':
+                light_ini_file.write('Red(' + str(i + 1) + ')=' + '255' + '\n')
+                light_ini_file.write('Green(' + str(i + 1) + ')=' + '255' + '\n')
+                light_ini_file.write('Blue(' + str(i + 1) + ')=' + '255' + '\n')
+            elif light["light_colour"] == 'red':
+                light_ini_file.write('Red(' + str(i + 1) + ')=' + '255' + '\n')
+                light_ini_file.write('Green(' + str(i + 1) + ')=' + '0' + '\n')
+                light_ini_file.write('Blue(' + str(i + 1) + ')=' + '0' + '\n')
+            elif light["light_colour"] == 'green':
+                light_ini_file.write('Red(' + str(i + 1) + ')=' + '0' + '\n')
+                light_ini_file.write('Green(' + str(i + 1) + ')=' + '255' + '\n')
+                light_ini_file.write('Blue(' + str(i + 1) + ')=' + '0' + '\n')
+            elif light["light_colour"] == 'blue':
+                light_ini_file.write('Red(' + str(i + 1) + ')=' + '0' + '\n')
+                light_ini_file.write('Green(' + str(i + 1) + ')=' + '0' + '\n')
+                light_ini_file.write('Blue(' + str(i + 1) + ')=' + '255' + '\n')
+            elif light["light_colour"] == 'yellow':
+                light_ini_file.write('Red(' + str(i + 1) + ')=' + '255' + '\n')
+                light_ini_file.write('Green(' + str(i + 1) + ')=' + '255' + '\n')
+                light_ini_file.write('Blue(' + str(i + 1) + ')=' + '0' + '\n')
+            elif light["light_colour"] == 'amber':
+                light_ini_file.write('Red(' + str(i + 1) + ')=' + '255' + '\n')
+                light_ini_file.write('Green(' + str(i + 1) + ')=' + '128' + '\n')
+                light_ini_file.write('Blue(' + str(i + 1) + ')=' + '0' + '\n')
+            elif light["light_colour"] == 'orange': # Currently same as amber
+                light_ini_file.write('Red(' + str(i + 1) + ')=' + '255' + '\n')
+                light_ini_file.write('Green(' + str(i + 1) + ')=' + '128' + '\n')
+                light_ini_file.write('Blue(' + str(i + 1) + ')=' + '0' + '\n')
+            elif light["light_colour"] == 'violet':
+                light_ini_file.write('Red(' + str(i + 1) + ')=' + '255' + '\n')
+                light_ini_file.write('Green(' + str(i + 1) + ')=' + '128' + '\n')
+                light_ini_file.write('Blue(' + str(i + 1) + ')=' + '255' + '\n')
+            elif light["light_colour"] == 'magenta':
+                light_ini_file.write('Red(' + str(i + 1) + ')=' + '255' + '\n')
+                light_ini_file.write('Green(' + str(i + 1) + ')=' + '128' + '\n')
+                light_ini_file.write('Blue(' + str(i + 1) + ')=' + '0' + '\n')
+            else:
+                print('Light colour ' + light["light_colour"] + ' not mapped\n')
+                light_ini_file.write('Red(' + str(i + 1) + ')=' + '255' + '\n')
+                light_ini_file.write('Green(' + str(i + 1) + ')=' + '255' + '\n')
+                light_ini_file.write('Blue(' + str(i + 1) + ')=' + '255' + '\n')
+
+            if (light["sector_start"] != '') and (light["sector_end"] != ''):
+                # 180 degree difference in definitions of light angles between OSM and Bridge Command (OSM is start bearing seen by observer)
+                start_angle = float(light["sector_start"]) + 180
+                end_angle = float(light["sector_end"]) + 180
+
+                # Normalise angles
+                while start_angle > 360:
+                    start_angle = start_angle - 360
+                    end_angle = end_angle - 360
+
+                # Ensure end angle is always greater than start
+                while end_angle < start_angle:
+                    end_angle = end_angle + 360
+
+                light_ini_file.write('StartAngle(' + str(i + 1) + ')=' + str(start_angle) + '\n')
+                light_ini_file.write('EndAngle(' + str(i + 1) + ')=' + str(end_angle) + '\n')
+            else:
+                light_ini_file.write('StartAngle(' + str(i + 1) + ')=' + '0' + '\n')
+                light_ini_file.write('EndAngle(' + str(i + 1) + ')=' + '360' + '\n')
+
+            # TODO: Logic for Height, PhaseStart
+            light_ini_file.write('Height(' + str(i + 1) + ')=' + '10' + '\n')  # TODO: Temporary
+
+            light_ini_file.write('\n')
+        else:
+            print('Light character ' + light["light_character"] + ' not mapped\n')
+
+    light_ini_file.close()
+
+    # Iterate for buoys/posts and similar
+    buoys = []
     for item in root.findall('node'):
         if len(item) > 0:
             seamark_type = get_child_value(item, 'seamark:type')
