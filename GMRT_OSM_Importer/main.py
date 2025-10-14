@@ -53,6 +53,10 @@ min_land_height = 1
 filter_sea_depth_limit = 10
 filter_land_height_limit = 10
 
+# Default light settings
+default_light_height = 5  # m
+default_light_range = 5  # Nm
+
 #######################################
 # End of settings, start of main script
 #######################################
@@ -202,9 +206,66 @@ if use_osm_map:
     # get root element
     root = tree.getroot()
 
+    # Iterate for buoys/posts and similar
+    buoys = []
+    for node_index, item in enumerate(root.findall('node')):
+        if len(item) > 0:
+            seamark_type = get_child_value(item, 'seamark:type')
+            if seamark_type != '':
+                seamark_category = get_child_value(item, 'seamark:' + seamark_type + ':category')
+                seamark_light_character = get_child_value(item, 'seamark:light:character')
+                seamark_light_colour = get_child_value(item, 'seamark:light:colour')
+                seamark_lat = item.attrib['lat']
+                seamark_lon = item.attrib['lon']
+                # Also to look at - sequence, period, height, range
+                # Also look at sector lights, which will need to be handled differently
+
+                # Add known buoy types for now
+                if seamark_type == 'beacon_lateral' and seamark_category == 'port':
+                    buoys.append(['port_post', seamark_lon, seamark_lat, True, node_index])
+                if seamark_type == 'beacon_lateral' and seamark_category == 'starboard':
+                    buoys.append(['stbd_post', seamark_lon, seamark_lat, True, node_index])
+
+                if seamark_type == 'beacon_special_purpose':
+                    buoys.append(['special_post', seamark_lon, seamark_lat, True, node_index])
+
+                if seamark_type == 'buoy_special_purpose' and seamark_category == 'mooring':
+                    buoys.append(['mooring', seamark_lon, seamark_lat, False, node_index])
+
+                if seamark_type == 'buoy_lateral' and seamark_category == 'port':
+                    buoys.append(['port', seamark_lon, seamark_lat, False, node_index])
+                if seamark_type == 'buoy_lateral' and seamark_category == 'starboard':
+                    buoys.append(['stbd', seamark_lon, seamark_lat, False, node_index])
+
+                if seamark_type == 'buoy_cardinal' and seamark_category == 'north':
+                    buoys.append(['north', seamark_lon, seamark_lat, False, node_index])
+                if seamark_type == 'buoy_cardinal' and seamark_category == 'east':
+                    buoys.append(['east', seamark_lon, seamark_lat, False, node_index])
+                if seamark_type == 'buoy_cardinal' and seamark_category == 'south':
+                    buoys.append(['south', seamark_lon, seamark_lat, False, node_index])
+                if seamark_type == 'buoy_cardinal' and seamark_category == 'west':
+                    buoys.append(['west', seamark_lon, seamark_lat, False, node_index])
+
+                # TODO: beacon_cardinal needed as well, plus all other buoy types
+
+    # Create buoy.ini file
+    buoy_ini_file_name = output_folder / 'buoy.ini'
+    buoy_ini_file = open(buoy_ini_file_name, 'w')
+
+    buoy_ini_file.write('Number=' + str(len(buoys)) + '\n\n')
+    for i, buoy in enumerate(buoys):
+        buoy_ini_file.write('Type(' + str(i+1) + ')=' + buoy[0] + '\n' )
+        buoy_ini_file.write('Long(' + str(i + 1) + ')=' + buoy[1] + '\n')
+        buoy_ini_file.write('Lat(' + str(i + 1) + ')=' + buoy[2] + '\n')
+        if buoy[3]:
+            buoy_ini_file.write('Grounded(' + str(i + 1) + ')=1\n')
+        buoy_ini_file.write('\n')
+
+    buoy_ini_file.close()
+
     # Iterate for lights
     lights = []
-    for item in root.findall('node'):
+    for node_index, item in enumerate(root.findall('node')):
         if len(item) > 0:
             # Bodge to find potential multiple (e.g. sector) lights
             for multi in range(10):
@@ -216,6 +277,13 @@ if use_osm_map:
                 light_character = get_child_value(item, 'seamark:light:' + multi_str + 'character')
                 if light_character != '':
                     # Some type of light found
+
+                    # Find if there's a matching entry in the 'buoys' list (same node_index)
+                    light_buoy = 0  # Initially assume not found
+                    for buoy_index, buoy in enumerate(buoys):
+                        if buoy[4] == node_index:
+                            light_buoy = buoy_index + 1
+
                     light_dict = {
                         "light_lat" : item.attrib['lat'],
                         "light_lon" : item.attrib['lon'],
@@ -225,8 +293,10 @@ if use_osm_map:
                         "light_group" : get_child_value(item, 'seamark:light:' + multi_str + 'group'),
                         "light_character" : light_character,
                         "sector_start" : get_child_value(item, 'seamark:light:' + multi_str + 'sector_start'),
-                        "sector_end": get_child_value(item, 'seamark:light:' + multi_str + 'sector_end')
-                        # TODO: Height
+                        "sector_end": get_child_value(item, 'seamark:light:' + multi_str + 'sector_end'),
+                        "light_height": get_child_value(item, 'seamark:light:' + multi_str + 'height'),
+                        "light_buoy": light_buoy,
+                        "node_index" : node_index
                     }
                     lights.append(light_dict)
 
@@ -269,14 +339,34 @@ if use_osm_map:
                 light_range = light["light_range"]
             else:
                 # Default value, nautical miles
-                light_range = '5'
+                light_range = str(default_light_range)
 
             light_ini_file.write('Desc(' + str(i + 1) + ')=' + str(light) + '\n')
 
-            light_ini_file.write('Long(' + str(i + 1) + ')=' + light["light_lon"] + '\n')
-            light_ini_file.write('Lat(' + str(i + 1) + ')=' + light["light_lat"] + '\n')
+            # Define position, either through lat/long, or which buoy/mark it's associated with
+            if light["light_buoy"] > 0:
+                light_ini_file.write('Buoy(' + str(i + 1) + ')=' + str(light["light_buoy"]) + '\n')
+            else:
+                light_ini_file.write('Long(' + str(i + 1) + ')=' + light["light_lon"] + '\n')
+                light_ini_file.write('Lat(' + str(i + 1) + ')=' + light["light_lat"] + '\n')
+
             light_ini_file.write('Sequence(' + str(i + 1) + ')=' + sequence + '\n')
             light_ini_file.write('Range(' + str(i + 1) + ')=' + light_range + '\n')
+
+            # For phase, use the node_index a bit like a hash input,
+            # so lights on same node with the same length sequence are in phase
+            phase_start = (light["node_index"] % len(sequence)) + 1
+            light_ini_file.write('PhaseStart(' + str(i + 1) + ')=' + str(phase_start) + '\n')
+
+            if light["light_height"] != '':
+                # Note this is actually height above mean sea level from OSM definition,
+                # might need adjusting to be above chart datum
+                light_ini_file.write(
+                    'Height(' + str(i + 1) + ')=' + light["light_height"] + '\n')
+                light_ini_file.write('Absolute(' + str(i + 1) + ')=1\n')
+            else:
+                light_ini_file.write(
+                    'Height(' + str(i + 1) + ')=' + str(default_light_height) + '\n')
 
             if light["light_colour"] == 'white':
                 light_ini_file.write('Red(' + str(i + 1) + ')=' + '255' + '\n')
@@ -340,71 +430,11 @@ if use_osm_map:
                 light_ini_file.write('StartAngle(' + str(i + 1) + ')=' + '0' + '\n')
                 light_ini_file.write('EndAngle(' + str(i + 1) + ')=' + '360' + '\n')
 
-            # TODO: Logic for Height, PhaseStart
-            light_ini_file.write('Height(' + str(i + 1) + ')=' + '10' + '\n')  # TODO: Temporary
-
             light_ini_file.write('\n')
         else:
             print('Light character ' + light["light_character"] + ' not mapped\n')
 
     light_ini_file.close()
-
-    # Iterate for buoys/posts and similar
-    buoys = []
-    for item in root.findall('node'):
-        if len(item) > 0:
-            seamark_type = get_child_value(item, 'seamark:type')
-            if seamark_type != '':
-                seamark_category = get_child_value(item, 'seamark:' + seamark_type + ':category')
-                seamark_light_character = get_child_value(item, 'seamark:light:character')
-                seamark_light_colour = get_child_value(item, 'seamark:light:colour')
-                seamark_lat = item.attrib['lat']
-                seamark_lon = item.attrib['lon']
-                # Also to look at - sequence, period, height, range
-                # Also look at sector lights, which will need to be handled differently
-
-                # Add known buoy types for now
-                if seamark_type == 'beacon_lateral' and seamark_category == 'port':
-                    buoys.append(['port_post', seamark_lon, seamark_lat, True])
-                if seamark_type == 'beacon_lateral' and seamark_category == 'starboard':
-                    buoys.append(['stbd_post', seamark_lon, seamark_lat, True])
-
-                if seamark_type == 'beacon_special_purpose':
-                    buoys.append(['special_post', seamark_lon, seamark_lat, True])
-
-                if seamark_type == 'buoy_special_purpose' and seamark_category == 'mooring':
-                    buoys.append(['mooring', seamark_lon, seamark_lat, False])
-
-                if seamark_type == 'buoy_lateral' and seamark_category == 'port':
-                    buoys.append(['port', seamark_lon, seamark_lat, False])
-                if seamark_type == 'buoy_lateral' and seamark_category == 'starboard':
-                    buoys.append(['stbd', seamark_lon, seamark_lat, False])
-
-                if seamark_type == 'buoy_cardinal' and seamark_category == 'north':
-                    buoys.append(['north', seamark_lon, seamark_lat, False])
-                if seamark_type == 'buoy_cardinal' and seamark_category == 'east':
-                    buoys.append(['east', seamark_lon, seamark_lat, False])
-                if seamark_type == 'buoy_cardinal' and seamark_category == 'south':
-                    buoys.append(['south', seamark_lon, seamark_lat, False])
-                if seamark_type == 'buoy_cardinal' and seamark_category == 'west':
-                    buoys.append(['west', seamark_lon, seamark_lat, False])
-
-                # TODO: beacon_cardinal needed as well, plus all other buoy types
-
-    # Create buoy.ini file
-    buoy_ini_file_name = output_folder / 'buoy.ini'
-    buoy_ini_file = open(buoy_ini_file_name, 'w')
-
-    buoy_ini_file.write('Number=' + str(len(buoys)) + '\n\n')
-    for i, buoy in enumerate(buoys):
-        buoy_ini_file.write('Type(' + str(i+1) + ')=' + buoy[0] + '\n' )
-        buoy_ini_file.write('Long(' + str(i + 1) + ')=' + buoy[1] + '\n')
-        buoy_ini_file.write('Lat(' + str(i + 1) + ')=' + buoy[2] + '\n')
-        if buoy[3]:
-            buoy_ini_file.write('Grounded(' + str(i + 1) + ')=1\n')
-        buoy_ini_file.write('\n')
-
-    buoy_ini_file.close()
 
 # Write a readme.txt file (For GMRT and OSM data)
 readme_file_name = output_folder / 'readme.txt'
