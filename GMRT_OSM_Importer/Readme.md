@@ -62,11 +62,9 @@ This could be improved, either generating a more
 realistic texture, or using available aerial or
 satellite photography.
 
-Additionally, from the OpenSeaMap project, there is
-a lot of data on buoys and navigation lights and 
-markers that could be used. The initial stages of 
-this have been started, but not all buoys or beacons
-are included, and no lights are yet included.
+Only a subset of buoy and fixed navigation mark
+information, and a subset of navigation light information
+is currently loaded.
 
 Ideally the script could also identify marina
 features from OSM data, and generate a representation
