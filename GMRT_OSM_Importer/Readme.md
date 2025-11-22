@@ -52,22 +52,11 @@ Open the script, and edit the variables in the top
 section. The main ones are the path to the GMRT 
 GeoTIFF file, and the output resolution.
 
-**Warning**:
-At the moment, the script is very slow to run, due
-to the OSM filtering. To test the script, you may 
-want to start with `use_osm_coastline = False`. 
-As an example, a model covering Portsmouth Harbour at 
-1025x1025 resolution took about 5 hours to process on a
-modern laptop.
-
 When the script has finished, the files in the output
 directory can be copied into a new folder in your
 Bridge Command world models folder.
 
 ## Future work
-It should be possible to increase the speed of the
-OSM filtering significantly.
-
 The terrain texture is currently very simplistic. 
 This could be improved, either generating a more
 realistic texture, or using available aerial or

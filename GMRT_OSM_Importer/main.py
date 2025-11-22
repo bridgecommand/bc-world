@@ -5,7 +5,8 @@ import numpy as np
 import shapefile
 import datetime
 from pathlib import Path
-from shapely.geometry import Point, shape
+from shapely.geometry import Polygon, Point
+from shapely.strtree import STRtree
 import xml.etree.ElementTree as ET
 from urllib.request import urlretrieve
 
@@ -134,30 +135,39 @@ if use_osm_coastline:
 
     filter_sample = 0
     total_samples = output_samples_long * output_samples_lat
+    samples = []
     for x_index in range(output_samples_long):
         for y_index in range(output_samples_lat):
-            if filter_sample % 1000 == 0:
-                completion_percent = 100 * filter_sample / total_samples
-                print(f'Filtering points {completion_percent:.2f}%')
-            base_data_height = gmrt_array_working[y_index, x_index]
-            if (base_data_height < filter_land_height_limit) and (base_data_height > -1 * filter_sea_depth_limit):
-                # Heights in range to check against OSM data
-                x_sample = terrain_long + x_index * (terrain_long_extent / output_samples_long)
-                y_sample = terrain_lat + terrain_lat_extent - y_index * (terrain_lat_extent / output_samples_lat)
-                # TODO: Check if these are off by 1 at max
-                point_to_check = (x_sample, y_sample)
-                point_is_land = False
+            x_sample = terrain_long + x_index * (terrain_long_extent / (output_samples_long - 1))
+            y_sample = terrain_lat + terrain_lat_extent - y_index * (terrain_lat_extent / (output_samples_lat - 1))
+            samples.append(Point(x_sample, y_sample))
 
-                for shape_index in range(number_of_shapes):
-                    if Point(point_to_check).within(shape(filtered_shapes[shape_index])):
-                        point_is_land = True
-                        # No need to check more polygons
-                        break
-                if point_is_land:
-                    gmrt_array_working[y_index, x_index] = max(base_data_height, min_land_height)
-                else:
-                    gmrt_array_working[y_index, x_index] = min(base_data_height, -1 * min_sea_depth)
-            filter_sample = filter_sample + 1
+    samples_tree = STRtree(samples)
+
+    land_points = []
+    for shape_index in range(number_of_shapes):
+        land_poly = Polygon(filtered_shapes[shape_index].points)
+        res = samples_tree.query(land_poly, predicate='contains')
+        land_points.extend(samples_tree.geometries.take(res).tolist())
+
+    is_land_array = np.zeros((output_samples_long, output_samples_lat))
+    for land_point in land_points:
+        land_point_x = land_point.x
+        land_point_y = land_point.y
+        land_point_index_x = round((land_point_x - terrain_long) * (output_samples_long - 1) / terrain_long_extent)
+        land_point_index_y = round((terrain_lat + terrain_lat_extent - land_point_y) * (output_samples_lat - 1) / terrain_lat_extent)
+        is_land_array[land_point_index_x, land_point_index_y] = 1
+
+    for x_index in range(output_samples_long):
+        for y_index in range(output_samples_lat):
+            point_is_land = False
+            base_data_height = gmrt_array_working[y_index, x_index]
+            if is_land_array[x_index, y_index] > 0:
+                point_is_land = True
+            if point_is_land:
+               gmrt_array_working[y_index, x_index] = max(base_data_height, min_land_height)
+            else:
+               gmrt_array_working[y_index, x_index] = min(base_data_height, -1 * min_sea_depth)
 
 # Create the .f32 file
 terrain_f32_file_name = output_folder / 'height.f32'
