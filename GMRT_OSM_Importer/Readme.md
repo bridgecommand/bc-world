@@ -8,6 +8,13 @@ bathymetry and elevation data, with
 [OpenStreetMap](https://www.openstreetmap.org/) 
 data to increase detail of the coastline.
 
+Optionally OSM2World is used to generate models of
+buildings and land features. This requires Java, 
+OSM2World and Osmosis to be installed, and requires  
+the alpha version of Bridge Command (5.10.4-alpha.2 
+onwards) which supports 'morphing' of models to fit 
+the terrain shape.
+
 The OSM filtering sets a minimum height for 'land' 
 areas, and a minimum depth for 'sea' areas, based
 on the OpenStreetMap coastline data. If this is not
@@ -45,12 +52,22 @@ and ensure you have the following packages installed:
 - matplotlib
 - numpy
 - rasterio
-- shapefile
+- pyshp (shapefile)
 - shapely
+
+And if you want to generate building models automatically:
+- osmium
+- You will also need a Java JRE or JDK available, and set the java_home variable in main.py to point to this
+- You will need to download OSM2World from https://osm2world.org/download/files/latest/OSM2World-latest-bin.zip (or the 0.5 version once this has been released) and set the osm_2_world_exe variable to point to this
 
 Open the script, and edit the variables in the top
 section. The main ones are the path to the GMRT 
 GeoTIFF file, and the output resolution.
+
+If you want to use the use_osm2world option to enable
+the generation of building models, a java runtime must
+be available, you will need to edit the variable java_home
+to point to this.
 
 When the script has finished, the files in the output
 directory can be copied into a new folder in your

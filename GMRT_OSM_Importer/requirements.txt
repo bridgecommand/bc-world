@@ -1,0 +1,6 @@
+rasterio
+matplotlib
+numpy
+pyshp
+shapely
+osmium

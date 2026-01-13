@@ -1,14 +1,15 @@
+import datetime
+from pathlib import Path
+import xml.etree.ElementTree as ET
+from urllib.request import urlretrieve
 import rasterio as rio
 import matplotlib.pyplot as plt
 import matplotlib.image as img
 import numpy as np
 import shapefile
-import datetime
-from pathlib import Path
 from shapely.geometry import Polygon, Point
 from shapely.strtree import STRtree
-import xml.etree.ElementTree as ET
-from urllib.request import urlretrieve
+
 
 ############################################
 # Start of variables to change for your area
@@ -35,6 +36,15 @@ replace_nans = True
 
 # If we want to get navigation aid (e.g. buoy) information from OSM
 use_osm_map = True
+
+# If we want to generate 3d models of buildings and similar on land from OSM (OSM2World)
+# Note that this requires osmium and osm2world and java to be available
+use_osm2world = True
+# Divide world into grid to avoid excessively large models
+x_divisions_OSM2World = 5
+y_divisions_OSM2World = 5
+osm_2_world_exe = "C:\\Users\\micro\\Documents\\BridgeCommand\\GMRTImporter\\osm2world\\OSM2World-latest-bin\\osm2world-windows.bat"
+java_home = "C:\\Users\\micro\\Documents\\BridgeCommand\\World\\OSM2World\\openjdk-25.0.1_windows-x64_bin\\jdk-25.0.1"
 
 # If we want to add coastline detail with the OSM coastline data
 # Warning, this is currently very slow for reasonable size output samples
@@ -460,6 +470,87 @@ readme_file.write('For details, please see Ryan, W. B. F., S.M. Carbotte, J. Cop
                   '\n'
                   'NOT FOR USE IN NAVIGATION\n')
 readme_file.close()
+
+if use_osm2world:
+    import osm_osmium_osm2world
+    osm_osmium_osm2world.set_java_location(java_home)
+
+    model_path = output_folder / 'Models'
+    if not model_path.exists():
+        model_path.mkdir()
+
+    land_model_path = model_path / 'LandObject'
+    if not land_model_path.exists():
+        land_model_path.mkdir()
+
+
+    land_object_ini_file_name = output_folder / 'landobject.ini'
+    land_object_ini_file = open(land_object_ini_file_name, 'w')
+
+    land_object_ini_file.write('Number = ' + str(x_divisions_OSM2World * y_divisions_OSM2World) + '\n\n')
+
+    land_object_index = 0
+
+    for x_division in range(x_divisions_OSM2World):
+        for y_division in range(y_divisions_OSM2World):
+
+            land_object_index = land_object_index + 1
+
+            min_lon = terrain_long + x_division * (terrain_long_extent / x_divisions_OSM2World)
+            max_lon = terrain_long + (x_division + 1) * (terrain_long_extent / x_divisions_OSM2World)
+            min_lat = terrain_lat + y_division * (terrain_lat_extent / y_divisions_OSM2World)
+            max_lat = terrain_lat + (y_division + 1) * (terrain_lat_extent / y_divisions_OSM2World)
+
+            model_name = 'osm_' + str(x_division + 1) + '_' + str(y_division + 1)
+
+            this_model_path = land_model_path / model_name
+            if not this_model_path.exists():
+                this_model_path.mkdir()
+
+            osm_output_name = str(this_model_path / 'filtered.osm')
+            obj_output_name = str(this_model_path / 'model.obj')
+
+            # Clip from overall OSM file and make model
+            osm_osmium_osm2world.clip_osm_file_osmium('map.osm', osm_output_name, min_lat, min_lon, max_lat, max_lon)
+            osm_osmium_osm2world.osm_2_world(osm_2_world_exe, osm_output_name, obj_output_name)
+
+            land_object_ini_file.write('Type(' + str(land_object_index) + ') = ' + model_name + '\n')
+
+            # Read model origin from the .obj file from a line like
+            # '# Coordinate origin (0,0,0): lat 50.795517000000004, lon -1.1060862, ele 0'
+            # Defaults in case we can't read the file:
+            model_origin_lon = '0'
+            model_origin_lat = '0'
+            try:
+                obj_file = open(obj_output_name, 'r')
+                for i in range(10):
+                    # Assume the line we want is in the first 10 lines
+                    obj_line = obj_file.readline()
+                    if obj_line.startswith('# Coordinate origin'):
+                        break
+                obj_file.close()
+
+                if obj_line != '':
+                    obj_line_split = obj_line.split(' ')
+                    model_origin_lat = obj_line_split[5].replace(',', '')
+                    model_origin_lon = obj_line_split[7].replace(',', '')
+            except FileNotFoundError:
+                pass
+                # Leave origin as default (0, 0)
+
+            land_object_ini_file.write('Lat(' + str(land_object_index) + ') = ' + model_origin_lat + '\n')
+            land_object_ini_file.write('Long(' + str(land_object_index) + ') = ' + model_origin_lon + '\n')
+            land_object_ini_file.write('HeightCorrection(' + str(land_object_index) + ') = ' + '0.1' + '\n')
+            land_object_ini_file.write('Rotation(' + str(land_object_index) + ') = ' + '180' + '\n')
+            land_object_ini_file.write('Morph(' + str(land_object_index) + ') = ' + '1' + '\n')
+
+            model_ini_filename = this_model_path / 'object.ini'
+            model_ini_file = open(model_ini_filename, 'w')
+            model_ini_file.write('FileName=\"model.obj\"\n')
+            model_ini_file.write('ScaleFactor=1.0\n')
+            model_ini_file.close()
+
+    land_object_ini_file.close()
 
 # End
 print('Script end: ' + str(datetime.datetime.now()))
