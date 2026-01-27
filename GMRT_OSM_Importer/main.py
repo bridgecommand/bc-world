@@ -20,9 +20,11 @@ from shapely.strtree import STRtree
 # should be updated to credit the correct source.
 gmrt_file = 'GMRTv4_3_1_20250814topo.tif'
 
+IALA_region = 'A' # 'A' or 'B'
+
 # Required output resolution. Ideally square, and (2^n + 1)
-output_samples_long = 1025
-output_samples_lat = 1025
+output_samples_long = 2049
+output_samples_lat = 2049
 
 # Location to output to
 output_folder = Path('Output_PortsmouthHarbour')
@@ -253,9 +255,9 @@ if use_osm_map:
                     buoys.append(['mooring', seamark_lon, seamark_lat, False, node_index])
 
                 if seamark_type == 'buoy_lateral' and seamark_category == 'port':
-                    buoys.append(['port', seamark_lon, seamark_lat, False, node_index])
+                    buoys.append(['port_med', seamark_lon, seamark_lat, False, node_index])
                 if seamark_type == 'buoy_lateral' and seamark_category == 'starboard':
-                    buoys.append(['stbd', seamark_lon, seamark_lat, False, node_index])
+                    buoys.append(['stbd_med', seamark_lon, seamark_lat, False, node_index])
 
                 if seamark_type == 'buoy_cardinal' and seamark_category == 'north':
                     buoys.append(['north', seamark_lon, seamark_lat, False, node_index])
@@ -271,6 +273,14 @@ if use_osm_map:
     # Create buoy.ini file
     buoy_ini_file_name = output_folder / 'buoy.ini'
     buoy_ini_file = open(buoy_ini_file_name, 'w')
+
+    # If IALA B, swap 'port' and 'stbd' for now:
+    if IALA_region == 'B':
+        for buoy in buoys:
+            if 'stbd' in buoy[0]:
+                buoy[0] = buoy[0].replace('stbd', 'port')
+            elif 'port' in buoy[0]:
+                buoy[0] = buoy[0].replace('port', 'stbd')
 
     buoy_ini_file.write('Number=' + str(len(buoys)) + '\n\n')
     for i, buoy in enumerate(buoys):
@@ -387,6 +397,8 @@ if use_osm_map:
             else:
                 light_ini_file.write(
                     'Height(' + str(i + 1) + ')=' + str(default_light_height) + '\n')
+                # Absolute=2 gives height relative to land, unless land height < 0, in which case height is relative to datum
+                light_ini_file.write('Absolute(' + str(i + 1) + ')=2\n')
 
             if light["light_colour"] == 'white':
                 light_ini_file.write('Red(' + str(i + 1) + ')=' + '255' + '\n')
