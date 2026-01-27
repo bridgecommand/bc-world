@@ -18,7 +18,7 @@ from shapely.strtree import STRtree
 # Main GMRT (or other WGS84 digital elevation map in GeoTIFF format) file to load
 # If using elevation data that is not from GMRT, the readme.txt section at the end
 # should be updated to credit the correct source.
-gmrt_file = 'GMRTv4_3_1_20250814topo.tif'
+gmrt_file = 'GMRTv4_3_1_PortsmouthHarbour.tif'
 
 IALA_region = 'A' # 'A' or 'B'
 
