@@ -77,4 +77,5 @@ def osm_2_world(path_to_osm2world, input_file, output_file):
                          "convert",
                          "--lod=4",
                          "--input=" + input_file,
-                         "--output=" + output_file])
+                         "--output=" + output_file],
+                   stdout=subprocess.DEVNULL)
