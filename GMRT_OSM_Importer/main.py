@@ -204,7 +204,7 @@ if use_osm_coastline:
     for x_index in range(output_samples_long):
         for y_index in range(output_samples_lat):
             point_is_land = False
-            base_data_height = gmrt_array_working[y_index, x_index]
+            base_data_height = float(gmrt_array_working[y_index, x_index])
             if is_land_array[x_index, y_index] > 0:
                 point_is_land = True
             if point_is_land:
@@ -255,9 +255,8 @@ def get_child_value(xml_item, key):
             result = xml_child.attrib["v"]
     return result
 
-
+osm_map_file = gmrt_file + ".osm"
 if use_osm_map:
-    osm_map_file = gmrt_file + ".osm"
     osm_map_url = (
         "https://overpass-api.de/api/map?bbox="
         + str(terrain_long)
@@ -672,6 +671,7 @@ if use_osm2world:
             model_origin_lat = "0"
             try:
                 obj_file = open(obj_output_name, "r")
+                obj_line = ""
                 for i in range(10):
                     # Assume the line we want is in the first 10 lines
                     obj_line = obj_file.readline()
