@@ -1,4 +1,6 @@
 import datetime
+import os.path
+import warnings
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from urllib.request import urlretrieve
@@ -26,8 +28,8 @@ IALA_region = 'A' # 'A' or 'B'
 output_samples_long = 2049
 output_samples_lat = 2049
 
-# Location to output to
-output_folder = Path('Output_PortsmouthHarbour')
+# Location to output to, from GMRT filename, users can change this to a more readable path
+output_folder = Path(gmrt_file + '_output')
 
 ################################
 # General configuration settings
@@ -45,8 +47,8 @@ use_osm2world = True
 # Divide world into grid to avoid excessively large models
 x_divisions_OSM2World = 5
 y_divisions_OSM2World = 5
-osm_2_world_exe = "C:\\Users\\micro\\Documents\\BridgeCommand\\GMRTImporter\\osm2world\\OSM2World-latest-bin\\osm2world-windows.bat"
-java_home = "C:\\Users\\micro\\Documents\\BridgeCommand\\World\\OSM2World\\openjdk-25.0.1_windows-x64_bin\\jdk-25.0.1"
+osm_2_world_exe = Path("osm2world/OSM2World-latest-bin/osm2world-windows.bat")
+java_home = Path("openjdk-25.0.1_windows-x64_bin/jdk-25.0.1")
 
 # If we want to add coastline detail with the OSM coastline data
 # Warning, this is currently very slow for reasonable size output samples
@@ -56,6 +58,10 @@ use_osm_coastline = True
 # This can be downloaded from
 # https://osmdata.openstreetmap.de/download/land-polygons-split-4326.zip
 osm_land_file = 'land-polygons-split-4326.zip'
+if use_osm_coastline and (not Path.is_file(Path(osm_land_file))):
+    warnings.warn('Open Street Map land polygons file not found! Continuing without coastline data.\nPlease download '
+                  'it from https://osmdata.openstreetmap.de/download/land-polygons-split-4326.zip')
+    use_osm_coastline = False
 
 # Values to use when applying overlap from OpenStreetMap coastlines file
 min_sea_depth = 10
@@ -209,19 +215,20 @@ def get_child_value(xml_item, key):
     return result
 
 if use_osm_map:
-    osm_map_file = 'map.osm'
+    osm_map_file = gmrt_file + '.osm'
     osm_map_url = ('https://overpass-api.de/api/map?bbox=' +
                    str(terrain_long) + ',' +
                    str(terrain_lat) + ',' +
                    str(terrain_long + terrain_long_extent) + ',' +
                    str(terrain_lat + terrain_lat_extent))
 
-    # Download the OSM Map here (TODO: Make this optional, and allow force override)
+    # Download the OSM Map here
     if not Path.is_file(Path(osm_map_file)):
-        print('Downloading OpenStreetMap data for area from ' + osm_map_url + '\n')
+        print('Downloading OpenStreetMap data for area from ' + osm_map_url)
         urlretrieve(osm_map_url, osm_map_file)
+        print('Saved OpenStreetMap data to ' + osm_map_file + '\n')
     else:
-        print('Using cached ' + osm_map_file + ' for OpenStreetMap data for area\n' )
+        print('Using cached ' + osm_map_file + ' for OpenStreetMap data for area.' )
 
     # create element tree object
     tree = ET.parse(osm_map_file)
@@ -485,7 +492,9 @@ readme_file.close()
 
 if use_osm2world:
     import osm_osmium_osm2world
-    osm_osmium_osm2world.set_java_location(java_home)
+    osm_osmium_osm2world.set_java_location(str(java_home.absolute()))
+
+    print('Generating building models using OSM2World')
 
     model_path = output_folder / 'Models'
     if not model_path.exists():
@@ -504,6 +513,7 @@ if use_osm2world:
     land_object_index = 0
 
     for x_division in range(x_divisions_OSM2World):
+        print(str(int(100 * x_division/x_divisions_OSM2World)) +'% complete.')
         for y_division in range(y_divisions_OSM2World):
 
             land_object_index = land_object_index + 1
@@ -523,8 +533,20 @@ if use_osm2world:
             obj_output_name = str(this_model_path / 'model.obj')
 
             # Clip from overall OSM file and make model
-            osm_osmium_osm2world.clip_osm_file_osmium('map.osm', osm_output_name, min_lat, min_lon, max_lat, max_lon)
-            osm_osmium_osm2world.osm_2_world(osm_2_world_exe, osm_output_name, obj_output_name)
+            osm_osmium_osm2world.clip_osm_file_osmium(osm_map_file, osm_output_name, min_lat, min_lon, max_lat, max_lon)
+
+            # Check if the file size is small (less than 1kb), if so check if it only has 3 lines
+            run_osm2world = True
+            if os.path.getsize(osm_output_name) < 1024:
+                with open(osm_output_name,'r') as osm_output_file:
+                    osm_output_file_length = len(osm_output_file.readlines())
+                if osm_output_file_length <= 3:
+                    run_osm2world = False
+
+
+            # Run OSM2World on the file
+            if run_osm2world:
+                osm_osmium_osm2world.osm_2_world(str(osm_2_world_exe.absolute()), osm_output_name, obj_output_name)
 
             land_object_ini_file.write('Type(' + str(land_object_index) + ') = ' + model_name + '\n')
 
