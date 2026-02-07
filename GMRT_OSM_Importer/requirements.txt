@@ -3,4 +3,4 @@ matplotlib
 numpy
 pyshp
 shapely
-osmium
+osmium>=4.3.0
