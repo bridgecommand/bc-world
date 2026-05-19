@@ -51,7 +51,7 @@ java_home = Path("openjdk-25.0.1_windows-x64_bin/jdk-25.0.1")
 
 # If we want to add coastline detail with the OSM coastline data
 # Warning, this is currently very slow for reasonable size output samples
-use_osm_coastline = True
+use_osm_coastline = False
 
 # The OSM coastlines (land polygons) file to use
 # This can be downloaded from
@@ -243,17 +243,42 @@ img.imsave(
 # Start of processing OSM map file for buoys, lights etc
 
 
-# Utility function to get value from child if present
-def get_child_value(xml_item, key):
+# Utility function to get value from child if present. Returns value from last child found
+def get_child_value(xml_item, key, exact=True):
     result = ""
     for xml_child in xml_item:
         if (
             "k" in xml_child.keys()
             and "v" in xml_child.keys()
-            and xml_child.attrib["k"] == key
         ):
-            result = xml_child.attrib["v"]
+            if exact:
+                if key == xml_child.attrib["k"]:
+                    result = xml_child.attrib["v"]
+            else:
+                if key in xml_child.attrib["k"]:
+                    result = xml_child.attrib["v"]
+
     return result
+
+
+# Utility function to get list of nodes
+def get_nodes(xml_item):
+    result = []
+    for xml_child in xml_item:
+        if xml_child.tag == "nd":
+            if "ref" in xml_child.keys():
+                result.append(xml_child.attrib["ref"])
+    return result
+
+
+# Utility function to get node lat/lon
+def get_node_position(root, node_id):
+    for node_index, item in enumerate(root.findall("node")):
+        if "id" in item.keys():
+            if item.attrib["id"] == node_id:
+                return [item.attrib["lat"], item.attrib["lon"]]
+    return []
+
 
 osm_map_file = gmrt_file + ".osm"
 if use_osm_map:
@@ -569,6 +594,20 @@ if use_osm_map:
             print("Light character " + light["light_character"] + " not mapped\n")
 
     light_ini_file.close()
+
+    # Iterate for 'piers' (used for marina pontoons and similar)
+    piers = []
+    # Find all ways with <tag k="man_made" v="pier"/>
+    for way_index, item in enumerate(root.findall("way")):
+        if len(item) > 0:
+            man_made_type = get_child_value(item, "man_made", False)
+            if man_made_type == "pier":
+                #  Find all nodes for this way
+                nodes = get_nodes(item)
+                locations = []
+                for node in nodes:
+                    locations.append(get_node_position(root, node))
+                piers.append(locations)
 
 # Write a readme.txt file (For GMRT and OSM data)
 readme_file_name = output_folder / "readme.txt"
