@@ -271,15 +271,6 @@ def get_nodes(xml_item):
     return result
 
 
-# Utility function to get node lat/lon
-def get_node_position(root, node_id):
-    for node_index, item in enumerate(root.findall("node")):
-        if "id" in item.keys():
-            if item.attrib["id"] == node_id:
-                return [item.attrib["lat"], item.attrib["lon"]]
-    return []
-
-
 osm_map_file = gmrt_file + ".osm"
 if use_osm_map:
     osm_map_url = (
@@ -596,8 +587,17 @@ if use_osm_map:
     light_ini_file.close()
 
     # Iterate for 'piers' (used for marina pontoons and similar)
-    piers = []
+    # Get all nodes into a dict first with ID as key, and [lat, lon] as value
+    node_dict = {}
+    for node_index, item in enumerate(root.findall("node")):
+        if ("id" in item.keys()) and ("lat" in item.keys()) and ("lon" in item.keys()):
+            node_id = item.attrib["id"]
+            node_lat = item.attrib["lat"]
+            node_lon = item.attrib["lon"]
+            node_dict[node_id] = [node_lat, node_lon]
+
     # Find all ways with <tag k="man_made" v="pier"/>
+    piers = []
     for way_index, item in enumerate(root.findall("way")):
         if len(item) > 0:
             man_made_type = get_child_value(item, "man_made", False)
@@ -606,8 +606,22 @@ if use_osm_map:
                 nodes = get_nodes(item)
                 locations = []
                 for node in nodes:
-                    locations.append(get_node_position(root, node))
+                    locations.append(node_dict.get(node))
                 piers.append(locations)
+
+    # Write a pontoon.ini file
+    pontoon_ini_file_name = output_folder / "pontoon.ini"
+    pontoon_ini_file = open(pontoon_ini_file_name, "w")
+
+    pontoon_ini_file.write("Number=" + str(len(piers)) + "\n\n")
+    for i, pier in enumerate(piers):
+        pontoon_ini_file.write("Nodes(" + str(i + 1) + ")=" + str(len(pier)) + "\n")
+        for j, node in enumerate(pier):
+            pontoon_ini_file.write("Lat(" + str(i + 1) + "," + str(j + 1) + ")=" + node[0] + "\n")
+            pontoon_ini_file.write("Long(" + str(i + 1) + "," + str(j + 1) + ")=" + node[1] + "\n")
+        pontoon_ini_file.write("\n")
+
+    pontoon_ini_file.close()
 
 # Write a readme.txt file (For GMRT and OSM data)
 readme_file_name = output_folder / "readme.txt"
