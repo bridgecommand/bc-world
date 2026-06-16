@@ -50,7 +50,6 @@ osm_2_world_exe = Path("osm2world/OSM2World-latest-bin/osm2world-windows.bat")
 java_home = Path("openjdk-25.0.1_windows-x64_bin/jdk-25.0.1")
 
 # If we want to add coastline detail with the OSM coastline data
-# Warning, this is currently very slow for reasonable size output samples
 use_osm_coastline = True
 
 # The OSM coastlines (land polygons) file to use
