@@ -3,7 +3,7 @@ import os.path
 import warnings
 from pathlib import Path
 import xml.etree.ElementTree as ET
-from urllib.request import urlretrieve
+import urllib.request
 import rasterio as rio
 import matplotlib.pyplot as plt
 import matplotlib.image as img
@@ -271,7 +271,13 @@ if use_osm_map:
     # Download the OSM Map here
     if not Path.is_file(Path(osm_map_file)):
         print("Downloading OpenStreetMap data for area from " + osm_map_url)
-        urlretrieve(osm_map_url, osm_map_file)
+        headers = {'User-Agent': 'World model generator for Bridge Command'}
+        request = urllib.request.Request(osm_map_url, headers=headers)
+
+        with urllib.request.urlopen(request) as response:
+            with open(osm_map_file, 'wb') as out:
+                out.write(response.read())
+
         print("Saved OpenStreetMap data to " + osm_map_file + "\n")
     else:
         print("Using cached " + osm_map_file + " for OpenStreetMap data for area.")
